@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>嫁 VS 姑 バトル</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; user-select:none; -webkit-user-select:none; }
+body { background:#0d0620; display:flex; justify-content:center; min-height:100vh; align-items:flex-start; }
+
+#game-root {
+  position:relative; width:100%; max-width:480px;
+  background:#1a0a2e; font-family:'Courier New',monospace;
+  min-height:100vh;
+}
+
+#arena {
+  position:relative; width:100%; height:240px; overflow:hidden;
+}
+#bg-svg { position:absolute; inset:0; width:100%; height:100%; }
+
+.char {
+  position:absolute; bottom:44px; width:56px;
+  display:flex; flex-direction:column; align-items:center;
+}
+.char svg { overflow:visible; }
+.char-label { font-size:9px; margin-top:-4px; }
+#player .char-label { color:#ff99cc; }
+#enemy .char-label { color:#99aaff; transform:scaleX(-1); }
+
+/* HUD */
+#hud {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:6px 10px; background:#0d0620; border-bottom:1px solid #4a2080;
+}
+.hp-block { flex:1; }
+.hp-label { font-size:10px; color:#aaa; margin-bottom:3px; }
+.hp-bar-bg { height:12px; background:#2a1040; border-radius:6px; overflow:hidden; border:1px solid #4a2080; }
+.hp-fill { height:100%; border-radius:6px; transition:width .15s; }
+#player-hp-fill { background:linear-gradient(90deg,#ff6b9d,#ff3366); }
+#enemy-hp-fill { background:linear-gradient(90deg,#6b9dff,#3366ff); }
+#enemy-hp-block .hp-bar-bg { direction:rtl; }
+.vs-badge { font-size:15px; font-weight:bold; color:#ffd700; padding:0 8px; flex-shrink:0; }
+
+/* Gauge Row */
+#gauge-row {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:3px 10px; background:#0a051a;
+}
+.gauge-wrap { flex:1; display:flex; flex-direction:column; gap:2px; }
+.gauge-label { font-size:9px; color:#cc99ff; }
+.gauge-bg { height:7px; background:#1a0a30; border-radius:4px; overflow:hidden; border:1px solid #4a2080; }
+.gauge-fill { height:100%; border-radius:4px; transition:width .1s; }
+#p-gauge-fill { background:linear-gradient(90deg,#ff8800,#ffdd00); }
+#e-gauge-fill { background:linear-gradient(90deg,#ff8800,#ffdd00); float:right; }
+.gauge-ready {
+  color:#ffd700; font-size:9px; font-weight:bold;
+  padding:0 6px; display:none;
+  animation:blink .5s infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+#timer-bar {
+  text-align:center; font-size:20px; font-weight:bold;
+  color:#ffd700; padding:2px 0; background:#0d0620;
+  letter-spacing:2px;
+}
+#scene-label {
+  text-align:center; font-size:9px; color:#8866aa;
+  padding:1px 0; background:#0a051a;
+}
+
+/* Controls */
+#controls { background:#0d0620; padding:8px 10px; border-top:1px solid #4a2080; }
+#joystick-area {
+  position:relative; width:100%; height:72px; margin-bottom:7px;
+  background:rgba(255,255,255,.03); border-radius:8px;
+  border:1px solid rgba(255,255,255,.08);
+  touch-action:none;
+  display:flex; align-items:center; justify-content:center;
+  color:rgba(255,255,255,.2); font-size:11px;
+}
+#joystick-thumb {
+  position:absolute; width:34px; height:34px;
+  background:radial-gradient(circle,#9966ff,#6633cc);
+  border-radius:50%; border:2px solid #cc99ff;
+  pointer-events:none;
+  transform:translate(-50%,-50%); display:none;
+}
+#btn-row { display:flex; gap:6px; }
+.btn {
+  flex:1; height:50px; border:none; border-radius:10px;
+  font-size:12px; font-weight:bold; font-family:'Courier New',monospace;
+  cursor:pointer;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+  transition:transform .08s, opacity .08s;
+  -webkit-tap-highlight-color:transparent;
+}
+.btn:active { transform:scale(.92); opacity:.85; }
+#btn-attack { background:linear-gradient(135deg,#ff3366,#cc0044); color:#fff; }
+#btn-defend { background:linear-gradient(135deg,#3399ff,#0055cc); color:#fff; }
+#btn-jump   { background:linear-gradient(135deg,#ffcc00,#ff8800); color:#1a0a2e; }
+#btn-beam   { background:linear-gradient(135deg,#aa00ff,#ff00aa); color:#fff; opacity:.45; transition:opacity .3s,transform .08s; }
+#btn-beam.ready { opacity:1; box-shadow:0 0 12px #ff00aa88; }
+.btn-icon  { font-size:18px; }
+.btn-label { font-size:9px; opacity:.85; }
+
+/* Status */
+#status-row {
+  display:flex; gap:5px; padding:3px 10px;
+  background:#0d0620; min-height:22px;
+  align-items:center; flex-wrap:wrap; overflow:hidden;
+}
+.status-tag { font-size:9px; padding:2px 6px; border-radius:10px; color:#fff; white-space:nowrap; }
+
+/* Overlay */
+#msg-overlay {
+  position:absolute; inset:0;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  background:rgba(10,5,20,.85); gap:12px;
+}
+#msg-title { font-size:24px; font-weight:bold; color:#ffd700; text-shadow:0 0 12px #ffa500; text-align:center; }
+#msg-sub   { font-size:12px; color:#cc99ff; text-align:center; padding:0 20px; }
+#btn-start {
+  padding:10px 28px;
+  background:linear-gradient(135deg,#9966ff,#6633cc);
+  color:#fff; border:2px solid #cc99ff;
+  border-radius:20px; font-size:15px; font-weight:bold;
+  font-family:'Courier New',monospace; cursor:pointer;
+}
+
+/* VFX */
+.beam-vfx {
+  position:absolute; pointer-events:none;
+  height:20px; border-radius:10px;
+  top:50%; transform:translateY(-50%);
+  animation:beamfly .4s ease-out forwards;
+}
+@keyframes beamfly {
+  0%  { opacity:1; width:0; }
+  50% { opacity:1; width:200px; }
+  100%{ opacity:0; width:200px; }
+}
+.hit-vfx {
+  position:absolute; font-size:22px; pointer-events:none;
+  animation:hitpop .55s ease-out forwards;
+}
+@keyframes hitpop {
+  0%  { opacity:1; transform:scale(.5) translateY(0); }
+  60% { opacity:1; transform:scale(1.4) translateY(-18px); }
+  100%{ opacity:0; transform:scale(1) translateY(-40px); }
+}
+</style>
+</head>
+<body>
+<div id="game-root">
+
+  <!-- HUD -->
+  <div id="hud">
+    <div class="hp-block" id="player-hp-block">
+      <div class="hp-label">嫁 ❤️</div>
+      <div class="hp-bar-bg"><div class="hp-fill" id="player-hp-fill" style="width:100%"></div></div>
+    </div>
+    <div class="vs-badge">VS</div>
+    <div class="hp-block" id="enemy-hp-block" style="text-align:right">
+      <div class="hp-label">姑 💙</div>
+      <div class="hp-bar-bg"><div class="hp-fill" id="enemy-hp-fill" style="width:100%"></div></div>
+    </div>
+  </div>
+
+  <!-- Gauge -->
+  <div id="gauge-row">
+    <div class="gauge-wrap">
+      <div class="gauge-label">⚡ ビームゲージ</div>
+      <div class="gauge-bg"><div class="gauge-fill" id="p-gauge-fill" style="width:0%"></div></div>
+    </div>
+    <div id="p-beam-ready" class="gauge-ready">READY!</div>
+    <div style="width:16px"></div>
+    <div id="e-beam-ready" class="gauge-ready">READY!</div>
+    <div class="gauge-wrap" style="text-align:right">
+      <div class="gauge-label">⚡ ビームゲージ</div>
+      <div class="gauge-bg"><div class="gauge-fill" id="e-gauge-fill" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <div id="timer-bar">60</div>
+  <div id="scene-label">—</div>
+
+  <!-- Arena -->
+  <div id="arena">
+    <svg id="bg-svg" viewBox="0 0 380 240" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+      <rect width="380" height="240" fill="#1a0a2e"/>
+    </svg>
+
+    <!-- Player: 嫁 -->
+    <div class="char" id="player" style="left:60px">
+      <svg width="52" height="82" viewBox="0 0 52 82">
+        <!-- body -->
+        <path d="M16 23 Q26 19 36 23 L39 57 Q26 60 13 57 Z" fill="#ff6b9d"/>
+        <!-- legs -->
+        <path d="M26 57 L21 77 M26 57 L31 77" stroke="#ff6b9d" stroke-width="6" stroke-linecap="round"/>
+        <!-- arms -->
+        <path d="M16 29 L5 44 M36 29 L47 44" stroke="#ffb3c6" stroke-width="5" stroke-linecap="round" id="p-arms"/>
+        <!-- head -->
+        <circle cx="26" cy="13" r="11" fill="#ffb3c6"/>
+        <!-- hair accessories -->
+        <circle cx="20" cy="10" r="3.5" fill="#ff3366"/>
+        <circle cx="32" cy="10" r="3.5" fill="#ff3366"/>
+        <!-- eyes -->
+        <circle cx="22" cy="12" r="2" fill="#cc2244"/>
+        <circle cx="30" cy="12" r="2" fill="#cc2244"/>
+        <!-- smile -->
+        <path d="M21 18 Q26 22 31 18" stroke="#cc3366" stroke-width="1.5" fill="none"/>
+        <!-- apron hint -->
+        <rect x="19" y="35" width="14" height="18" rx="2" fill="#ffccdd" opacity=".5"/>
+      </svg>
+      <div class="char-label">嫁</div>
+    </div>
+
+    <!-- Enemy: 姑 -->
+    <div class="char" id="enemy" style="left:300px; transform:scaleX(-1)">
+      <svg width="52" height="82" viewBox="0 0 52 82">
+        <!-- body -->
+        <path d="M16 23 Q26 19 36 23 L39 57 Q26 60 13 57 Z" fill="#5566aa"/>
+        <!-- legs -->
+        <path d="M26 57 L21 77 M26 57 L31 77" stroke="#5566aa" stroke-width="6" stroke-linecap="round"/>
+        <!-- arms -->
+        <path d="M16 29 L5 44 M36 29 L47 44" stroke="#c8b8a2" stroke-width="5" stroke-linecap="round"/>
+        <!-- head -->
+        <circle cx="26" cy="13" r="11" fill="#c8b8a2"/>
+        <!-- hair bun -->
+        <ellipse cx="26" cy="4" rx="10" ry="6" fill="#888"/>
+        <ellipse cx="26" cy="3" rx="7" ry="4" fill="#777"/>
+        <!-- eyes -->
+        <circle cx="22" cy="12" r="2" fill="#443322"/>
+        <circle cx="30" cy="12" r="2" fill="#443322"/>
+        <!-- stern mouth -->
+        <path d="M21 18 Q26 16 31 18" stroke="#886644" stroke-width="1.5" fill="none"/>
+        <!-- wrinkle lines -->
+        <path d="M16 14 Q18 12 20 14" stroke="#aaa" stroke-width="1" fill="none"/>
+        <path d="M32 14 Q34 12 36 14" stroke="#aaa" stroke-width="1" fill="none"/>
+      </svg>
+      <div class="char-label">姑</div>
+    </div>
+
+    <!-- Message Overlay -->
+    <div id="msg-overlay">
+      <div id="msg-title">👰 嫁 VS 姑 👵</div>
+      <div id="msg-sub">攻撃でゲージを溜めて<br>⚡ ビームを叩き込め！</div>
+      <button id="btn-start">バトル開始！</button>
+    </div>
+  </div>
+
+  <div id="status-row"></div>
+
+  <!-- Controls -->
+  <div id="controls">
+    <div id="joystick-area">
+      <span>← スライドして移動 →</span>
+      <div id="joystick-thumb"></div>
+    </div>
+    <div id="btn-row">
+      <button class="btn" id="btn-attack">
+        <span class="btn-icon">👊</span><span class="btn-label">攻撃</span>
+      </button>
+      <button class="btn" id="btn-defend">
+        <span class="btn-icon">🛡️</span><span class="btn-label">防御</span>
+      </button>
+      <button class="btn" id="btn-jump">
+        <span class="btn-icon">🦋</span><span class="btn-label">ジャンプ</span>
+      </button>
+      <button class="btn" id="btn-beam">
+        <span class="btn-icon">⚡</span><span class="btn-label">ビーム</span>
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  CONSTANTS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━
+const ARENA_W    = 380;
+const FLOOR_Y    = 44;
+const CHAR_W     = 52;
+const PUNCH_DMG  = 7;   // 15発で相手を倒せる (100/7≒15)
+const BEAM_DMG   = 14;  // パンチの2倍
+const ATTACK_CD  = 38;
+const ATTACK_RANGE = 74;
+const GAUGE_MAX  = 100;
+const GAUGE_PER_HIT = 13; // 8発でゲージMAX
+const GRAVITY    = 1.2;
+const JUMP_V     = 18;
+const MOVE_SPEED = 3.5;
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  BACKGROUND SCENES
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━
+const SCENES = [
+  {
+    label: '🍳 台所バトル',
+    render(svg) {
+      svg.innerHTML = `
+      <defs>
+        <linearGradient id="bg0" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stop-color="#fff8f0"/>
+          <stop offset="100%" stop-color="#fde8c8"/>
+        </linearGradient>
+      </defs>
+      <rect width="380" height="240" fill="url(#bg0)"/>
+      <!-- floor -->
+      <rect x="0" y="200" width="380" height="40" fill="#d4a06a"/>
+      <rect x="0" y="196" width="380" height="7" fill="#b8844a" rx="2"/>
+      <!-- tile pattern -->
+      <rect x="0" y="200" width="380" height="40" fill="none" stroke="#c09050" stroke-width=".5" opacity=".4"/>
+      <!-- fridge left -->
+      <rect x="5" y="120" width="80" height="80" rx="4" fill="#d0e8ec" stroke="#90b8c0" stroke-width="1.5"/>
+      <rect x="10" y="126" width="32" height="46" rx="2" fill="#b0ccd0"/>
+      <rect x="48" y="126" width="30" height="46" rx="2" fill="#b0ccd0"/>
+      <circle cx="42" cy="148" r="3" fill="#8aacb0"/>
+      <!-- stove center -->
+      <rect x="145" y="168" width="90" height="30" rx="4" fill="#888" stroke="#666" stroke-width="1"/>
+      <ellipse cx="170" cy="178" rx="16" ry="5" fill="#555"/>
+      <ellipse cx="210" cy="178" rx="16" ry="5" fill="#555"/>
+      <path d="M165 165 Q168 155 172 150" stroke="#ff6600" stroke-width="2.5" fill="none" stroke-linecap="round" opacity=".8"/>
+      <path d="M168 165 Q166 153 170 148" stroke="#ffaa00" stroke-width="1.5" fill="none" opacity=".7"/>
+      <!-- pot on stove -->
+      <ellipse cx="170" cy="165" rx="22" ry="8" fill="#aa7733"/>
+      <rect x="150" y="148" width="40" height="18" rx="3" fill="#995522"/>
+      <rect x="147" y="144" width="6" height="8" rx="2" fill="#777"/>
+      <rect x="167" y="144" width="6" height="8" rx="2" fill="#777"/>
+      <!-- shelves right -->
+      <rect x="295" y="115" width="80" height="85" rx="4" fill="#e8d4a0" stroke="#c0a060" stroke-width="1.5"/>
+      <rect x="295" y="135" width="80" height="2" fill="#c0a060"/>
+      <rect x="295" y="160" width="80" height="2" fill="#c0a060"/>
+      <rect x="303" y="140" width="16" height="18" rx="2" fill="#cc4433"/>
+      <rect x="323" y="140" width="16" height="18" rx="2" fill="#4488cc"/>
+      <rect x="343" y="140" width="16" height="18" rx="2" fill="#44aa44"/>
+      <rect x="303" y="165" width="20" height="28" rx="2" fill="#e8c890"/>
+      <rect x="328" y="165" width="20" height="28" rx="2" fill="#e8c890"/>
+      <!-- husband hiding behind fridge door (left) -->
+      <g>
+        <ellipse cx="112" cy="88" rx="13" ry="13" fill="#f5c8a0"/>
+        <rect x="100" y="100" width="24" height="36" rx="5" fill="#5577aa"/>
+        <path d="M100 106 L91 124 M124 106 L133 124" stroke="#5577aa" stroke-width="7" stroke-linecap="round"/>
+        <circle cx="107" cy="85" r="2.5" fill="#442211"/>
+        <circle cx="117" cy="85" r="2.5" fill="#442211"/>
+        <path d="M104 94 Q111 97 118 94" stroke="#cc6644" stroke-width="1.5" fill="none"/>
+        <!-- sweat drop -->
+        <ellipse cx="122" cy="80" rx="4" ry="6" fill="#88ccff" opacity=".8"/>
+        <ellipse cx="122" cy="77" rx="2" ry="3" fill="#aaddff" opacity=".8"/>
+        <!-- speech -->
+        <rect x="126" y="66" width="68" height="18" rx="6" fill="#fff" stroke="#ccc" stroke-width="1"/>
+        <text x="132" y="79" font-size="9" fill="#555" font-family="sans-serif">どどど…どうしよう</text>
+        <path d="M130 84 L126 84 L130 88" fill="#fff" stroke="#ccc" stroke-width="1"/>
+      </g>`;
+    }
+  },
+  {
+    label: '🛋️ リビングバトル',
+    render(svg) {
+      svg.innerHTML = `
+      <defs>
+        <linearGradient id="bg1" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stop-color="#f0f0ff"/>
+          <stop offset="100%" stop-color="#d8e4ff"/>
+        </linearGradient>
+      </defs>
+      <rect width="380" height="240" fill="url(#bg1)"/>
+      <!-- floor -->
+      <rect x="0" y="200" width="380" height="40" fill="#c09878"/>
+      <rect x="0" y="196" width="380" height="6" fill="#a07858"/>
+      <!-- window -->
+      <rect x="140" y="10" width="100" height="80" rx="3" fill="#ccddff" stroke="#8899cc" stroke-width="2"/>
+      <line x1="190" y1="10" x2="190" y2="90" stroke="#8899cc" stroke-width="1.5"/>
+      <line x1="140" y1="50" x2="240" y2="50" stroke="#8899cc" stroke-width="1.5"/>
+      <rect x="140" y="8" width="100" height="8" rx="2" fill="#aa8866"/>
+      <!-- curtains -->
+      <path d="M140 10 Q155 30 148 90" stroke="#ffaacc" stroke-width="8" fill="none"/>
+      <path d="M240 10 Q225 30 232 90" stroke="#ffaacc" stroke-width="8" fill="none"/>
+      <!-- sofa left -->
+      <rect x="5" y="158" width="130" height="44" rx="8" fill="#cc8855" stroke="#aa6633" stroke-width="1.5"/>
+      <rect x="5" y="148" width="130" height="16" rx="6" fill="#dd9966"/>
+      <rect x="5" y="148" width="18" height="54" rx="5" fill="#bb7744"/>
+      <rect x="117" y="148" width="18" height="54" rx="5" fill="#bb7744"/>
+      <!-- cushions -->
+      <rect x="28" y="162" width="38" height="30" rx="5" fill="#ffcc88" stroke="#ddaa66" stroke-width="1"/>
+      <rect x="74" y="162" width="38" height="30" rx="5" fill="#ffcc88" stroke="#ddaa66" stroke-width="1"/>
+      <!-- TV right -->
+      <rect x="270" y="125" width="105" height="74" rx="5" fill="#222"/>
+      <rect x="275" y="130" width="95" height="62" rx="3" fill="#1a3a6a"/>
+      <rect x="278" y="133" width="89" height="56" rx="2" fill="#0a2a5a"/>
+      <!-- TV content -->
+      <text x="295" y="158" font-size="11" fill="#ffdd44" font-family="sans-serif">嫁姑バトル</text>
+      <text x="285" y="172" font-size="9" fill="#88ccff" font-family="sans-serif">LIVE BROADCAST</text>
+      <rect x="275" y="198" width="20" height="4" rx="2" fill="#444"/>
+      <ellipse cx="322" cy="202" rx="4" ry="4" fill="#333"/>
+      <!-- coffee table -->
+      <rect x="145" y="180" width="80" height="20" rx="4" fill="#c8a870" stroke="#a08850" stroke-width="1"/>
+      <rect x="150" y="186" width="20" height="8" rx="2" fill="#e8c890"/>
+      <rect x="205" y="186" width="10" height="8" rx="2" fill="#8899aa"/>
+      <!-- father-in-law on sofa -->
+      <g>
+        <ellipse cx="53" cy="105" rx="13" ry="13" fill="#d4a870"/>
+        <!-- bald head -->
+        <ellipse cx="53" cy="97" rx="10" ry="5" fill="#c89858"/>
+        <rect x="41" y="117" width="24" height="38" rx="5" fill="#8866aa"/>
+        <path d="M41 123 L32 140 M65 123 L74 140" stroke="#8866aa" stroke-width="7" stroke-linecap="round"/>
+        <circle cx="48" cy="103" r="2" fill="#443322"/>
+        <circle cx="58" cy="103" r="2" fill="#443322"/>
+        <path d="M46 112 Q53 115 60 112" stroke="#aa7744" stroke-width="1.5" fill="none"/>
+        <!-- newspaper -->
+        <rect x="26" y="145" width="32" height="22" rx="2" fill="#fffde0" stroke="#ccc" stroke-width="1"/>
+        <line x1="30" y1="151" x2="54" y2="151" stroke="#888" stroke-width="1"/>
+        <line x1="30" y1="156" x2="54" y2="156" stroke="#888" stroke-width="1"/>
+        <line x1="30" y1="161" x2="48" y2="161" stroke="#888" stroke-width="1"/>
+        <!-- sweat -->
+        <ellipse cx="70" cy="98" rx="4" ry="6" fill="#88ccff" opacity=".8"/>
+        <rect x="34" y="88" width="64" height="16" rx="6" fill="#fff" stroke="#ccc" stroke-width="1"/>
+        <text x="37" y="100" font-size="8" fill="#555" font-family="sans-serif">見なかったことに…</text>
+        <path d="M38 104 L34 104 L38 108" fill="#fff" stroke="#ccc" stroke-width="1"/>
+      </g>`;
+    }
+  },
+  {
+    label: '🌸 庭バトル',
+    render(svg) {
+      svg.innerHTML = `
+      <defs>
+        <linearGradient id="bg2" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stop-color="#87ceeb"/>
+          <stop offset="55%" stop-color="#c8eaff"/>
+          <stop offset="55%" stop-color="#5caa3a"/>
+          <stop offset="100%" stop-color="#3a8828"/>
+        </linearGradient>
+      </defs>
+      <rect width="380" height="240" fill="url(#bg2)"/>
+      <!-- clouds -->
+      <ellipse cx="60" cy="35" rx="35" ry="18" fill="#fff" opacity=".85"/>
+      <ellipse cx="85" cy="28" rx="25" ry="16" fill="#fff" opacity=".8"/>
+      <ellipse cx="40" cy="38" rx="22" ry="14" fill="#fff" opacity=".75"/>
+      <ellipse cx="300" cy="25" rx="40" ry="20" fill="#fff" opacity=".8"/>
+      <ellipse cx="330" cy="18" rx="28" ry="16" fill="#fff" opacity=".75"/>
+      <!-- sun -->
+      <circle cx="340" cy="55" r="22" fill="#ffe566"/>
+      <circle cx="340" cy="55" r="17" fill="#ffdd00"/>
+      <path d="M340 27 L340 18 M340 83 L340 92 M312 55 L303 55 M368 55 L377 55
+               M320 35 L313 28 M360 75 L367 82 M360 35 L367 28 M320 75 L313 82"
+            stroke="#ffcc00" stroke-width="2.5" stroke-linecap="round"/>
+      <!-- cherry tree -->
+      <rect x="155" y="115" width="16" height="85" rx="4" fill="#8b5e2a"/>
+      <ellipse cx="163" cy="108" rx="40" ry="32" fill="#e86090"/>
+      <ellipse cx="133" cy="118" rx="26" ry="20" fill="#f070a0"/>
+      <ellipse cx="193" cy="118" rx="26" ry="20" fill="#f070a0"/>
+      <ellipse cx="163" cy="88" rx="22" ry="18" fill="#ff80b0"/>
+      <!-- petals falling -->
+      <ellipse cx="80" cy="95" rx="6" ry="3" fill="#ffaacc" opacity=".7" transform="rotate(20 80 95)"/>
+      <ellipse cx="250" cy="80" rx="5" ry="2.5" fill="#ffbbdd" opacity=".6" transform="rotate(-15 250 80)"/>
+      <ellipse cx="300" cy="110" rx="5" ry="2.5" fill="#ffaacc" opacity=".5" transform="rotate(30 300 110)"/>
+      <!-- stone pavement -->
+      <ellipse cx="190" cy="205" rx="190" ry="10" fill="#bba880" opacity=".6"/>
+      <!-- house right -->
+      <rect x="290" y="148" width="88" height="55" rx="4" fill="#e8d8b0" stroke="#c0a868" stroke-width="1.5"/>
+      <rect x="299" y="156" width="22" height="34" rx="2" fill="#b09068"/>
+      <rect x="333" y="158" width="18" height="16" rx="2" fill="#c8dde0"/>
+      <path d="M285 150 L334 120 L383 150" fill="#cc4422" stroke="#aa3311" stroke-width="1"/>
+      <!-- husband hiding behind tree / peeping -->
+      <g>
+        <ellipse cx="220" cy="88" rx="12" ry="12" fill="#f5c8a0"/>
+        <rect x="209" y="99" width="22" height="32" rx="5" fill="#5599cc"/>
+        <path d="M209 105 L201 121 M231 105 L239 121" stroke="#5599cc" stroke-width="6" stroke-linecap="round"/>
+        <circle cx="215" cy="86" r="2" fill="#442211"/>
+        <circle cx="225" cy="86" r="2" fill="#442211"/>
+        <path d="M213 94 Q220 97 227 94" stroke="#cc6644" stroke-width="1.5" fill="none"/>
+        <!-- peeking hand on tree -->
+        <path d="M208 102 Q200 102 200 108" stroke="#f5c8a0" stroke-width="5" stroke-linecap="round"/>
+        <!-- sweat -->
+        <ellipse cx="234" cy="82" rx="3.5" ry="5" fill="#88ccff" opacity=".8"/>
+        <ellipse cx="234" cy="79" rx="2" ry="3" fill="#aaddff" opacity=".7"/>
+        <rect x="236" y="66" width="70" height="16" rx="6" fill="#fff" stroke="#ccc" stroke-width="1"/>
+        <text x="240" y="78" font-size="8.5" fill="#555" font-family="sans-serif">まあまあ二人とも…</text>
+        <path d="M240 82 L236 82 L240 86" fill="#fff" stroke="#ccc" stroke-width="1"/>
+      </g>`;
+    }
+  }
+];
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  GAME STATE
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━
+let gameActive = false, gameOver = false;
+let timer = 60, timerInterval = null;
+let joystickActive = false, joystickOriginX = 0, joystickDx = 0;
+let lastTime = 0;
+let currentScene = 0;
+
+const player = {
+  el: null, x: 60, y: 0, vy: 0,
+  hp: 100, maxHp: 100, gauge: 0,
+  defending: false, jumping: false,
+  attackCooldown: 0, stunned: 0
+};
+const enemy = {
+  el: null, x: 300, y: 0, vy: 0,
+  hp: 100, maxHp: 100, gauge: 0,
+  defending: false, jumping: false,
+  attackCooldown: 0, stunned: 0,
+  aiTimer: 0, aiState: 'approach'
+};
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  DOM HELPERS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━
+const $id = id => document.getElementById(id);
+
+function setHp(who, val) {
+  const c = who === 'player' ? player : enemy;
+  c.hp = Math.max(0, Math.min(c.maxHp, val));
+  $id(who === 'player' ? 'player-hp-fill' : 'enemy-hp-fill').style.width = (c.hp / c.maxHp * 100) + '%';
+}
+
+function setGauge(who, val) {
+  const c = who === 'player' ? player : enemy;
+  c.gauge = Math.max(0, Math.min(GAUGE_MAX, val));
+  const pct = (c.gauge / GAUGE_MAX * 100).toFixed(1);
+  $id(who === 'player' ? 'p-gauge-fill' : 'e-gauge-fill').style.width = pct + '%';
+  const readyEl = $id(who === 'player' ? 'p-beam-ready' : 'e-beam-ready');
+  readyEl.style.display = c.gauge >= GAUGE_MAX ? 'block' : 'none';
+  if (who === 'player') $id('btn-beam').classList.toggle('ready', c.gauge >= GAUGE_MAX);
+}
+
+function showStatus(txt, color = '#666') {
+  const tag = document.createElement('span');
+  tag.className = 'status-tag';
+  tag.style.background = color;
+  tag.textContent = txt;
+  $id('status-row').appendChild(tag);
+  setTimeout(() => tag.remove(), 1800);
+}
+
+function spawnHit(x, y, txt) {
+  const d = document.createElement('div');
+  d.className = 'hit-vfx';
+  d.style.cssText = `left:${x}px;top:${y}px`;
+  d.textContent = txt;
+  $id('arena').appendChild(d);
+  setTimeout(() => d.remove(), 600);
+}
+
+function spawnBeam(fromX, toRight, grad) {
+  const d = document.createElement('div');
+  d.className = 'beam-vfx';
+  d.style.cssText = `background:${grad};left:${fromX}px;` + (!toRight ? 'transform:translateY(-50%) scaleX(-1);' : '');
+  $id('arena').appendChild(d);
+  setTimeout(() => d.remove(), 450);
+}
+
+function renderPositions() {
+  const arenaPx = $id('arena').clientWidth || ARENA_W;
+  const s = arenaPx / ARENA_W;
+  player.el.style.cssText = `left:${player.x * s}px;bottom:${FLOOR_Y + player.y}px;` +
+    (player.defending ? 'filter:drop-shadow(0 0 7px #3399ff)' : '');
+  enemy.el.style.cssText = `left:${enemy.x * s}px;bottom:${FLOOR_Y + enemy.y}px;transform:scaleX(-1);` +
+    (enemy.defending ? 'filter:drop-shadow(0 0 7px #3399ff) scaleX(-1)' : '');
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  GAME LOGIC
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━
+function doAttack(who) {
+  const atk = who === 'player' ? player : enemy;
+  const def = who === 'player' ? enemy : player;
+  const defWho = who === 'player' ? 'enemy' : 'player';
+  if (atk.attackCooldown > 0 || atk.stunned > 0) return;
+  const dist = Math.abs(atk.x - def.x);
+  if (dist > ATTACK_RANGE) { showStatus('空振り💨', '#555'); return; }
+  atk.attackCooldown = ATTACK_CD;
+  const s = ($id('arena').clientWidth || ARENA_W) / ARENA_W;
+
+  if (def.defending) {
+    atk.stunned = 22;
+    spawnHit(def.x * s, 55, '🛡️');
+    showStatus('ガード！🛡️', '#1155cc');
+    return;
+  }
+  const dmg = PUNCH_DMG + Math.floor(Math.random() * 4);
+  setHp(defWho, def.hp - dmg);
+  setGauge(who, atk.gauge + GAUGE_PER_HIT);
+  spawnHit(def.x * s, 50, ['👊','💢','😤','✊'][Math.floor(Math.random() * 4)]);
+  showStatus(`💥 -${dmg}HP`, who === 'player' ? '#cc1144' : '#1144cc');
+  checkWin();
+}
+
+function doBeam(who) {
+  const atk = who === 'player' ? player : enemy;
+  const def = who === 'player' ? enemy : player;
+  const defWho = who === 'player' ? 'enemy' : 'player';
+  if (atk.gauge < GAUGE_MAX) return;
+  atk.gauge = 0;
+  setGauge(who, 0);
+  const s = ($id('arena').clientWidth || ARENA_W) / ARENA_W;
+  const toRight = atk.x < def.x;
+  const grad = who === 'player'
+    ? 'linear-gradient(90deg,#ff00aa,#ffaa00,#ff00aa)'
+    : 'linear-gradient(90deg,#00aaff,#aa00ff,#00aaff)';
+  spawnBeam(atk.x * s, toRight, grad);
+  if (def.defending) {
+    atk.stunned = 35;
+    spawnHit(atk.x * s, 60, '✨');
+    showStatus('ビームガード！✨', '#7700cc');
+    return;
+  }
+  const dmg = BEAM_DMG + Math.floor(Math.random() * 6);
+  setHp(defWho, def.hp - dmg);
+  spawnHit(def.x * s, 40, '⚡💥⚡');
+  showStatus(who === 'player' ? `⚡ 必殺ビーム！ -${dmg}HP!` : `👵⚡ 姑ビーム！ -${dmg}HP!`, '#8800cc');
+  checkWin();
+}
+
+function doJump(who) {
+  const c = who === 'player' ? player : enemy;
+  if (!c.jumping && c.y === 0) { c.vy = JUMP_V; c.jumping = true; }
+}
+
+function physicsStep() {
+  for (const c of [player, enemy]) {
+    if (c.y > 0) {
+      c.vy -= GRAVITY;
+      c.y += c.vy;
+      if (c.y <= 0) { c.y = 0; c.vy = 0; c.jumping = false; }
+    }
+    if (c.attackCooldown > 0) c.attackCooldown--;
+    if (c.stunned > 0) c.stunned--;
+  }
+}
+
+function enemyAI() {
+  if (!gameActive || enemy.stunned > 0) return;
+  const dist = enemy.x - player.x;
+  const absDist = Math.abs(dist);
+  enemy.aiTimer--;
+  if (enemy.aiTimer > 0) return;
+  enemy.defending = false;
+
+  const r = Math.random();
+  if (absDist > 88) {
+    enemy.aiState = 'approach';
+  } else if (enemy.gauge >= GAUGE_MAX && r < 0.55) {
+    enemy.aiState = 'beam';
+  } else if (r < 0.35) {
+    enemy.aiState = 'attack';
+  } else if (r < 0.52) {
+    enemy.aiState = 'defend';
+  } else if (r < 0.62) {
+    enemy.aiState = 'jump';
+  } else {
+    enemy.aiState = 'retreat';
+  }
+  enemy.aiTimer = 10 + Math.floor(Math.random() * 18);
+
+  if (enemy.aiState === 'approach' || enemy.aiState === 'retreat') {
+    const dir = enemy.aiState === 'approach' ? (dist > 0 ? -1 : 1) : (dist > 0 ? 1 : -1);
+    enemy.x = Math.max(10, Math.min(ARENA_W - CHAR_W, enemy.x + dir * MOVE_SPEED * 1.15));
+  } else if (enemy.aiState === 'attack') {
+    doAttack('enemy');
+  } else if (enemy.aiState === 'defend') {
+    enemy.defending = true;
+    setTimeout(() => { if (gameActive) enemy.defending = false; }, 550);
+  } else if (enemy.aiState === 'jump') {
+    doJump('enemy');
+  } else if (enemy.aiState === 'beam') {
+    doBeam('enemy');
+  }
+}
+
+function checkWin() {
+  if (player.hp <= 0 || enemy.hp <= 0 || timer <= 0) endGame();
+}
+
+function endGame() {
+  gameActive = false; gameOver = true;
+  clearInterval(timerInterval);
+  let result, sub;
+  if (player.hp <= 0 && enemy.hp > 0) {
+    result = '😭 姑の勝利！';
+    sub = '旦那がおどおどしてます…リベンジ！';
+  } else if (enemy.hp <= 0) {
+    result = '🎉 嫁の大勝利！';
+    sub = '旦那がほっとした顔をしています😅';
+  } else {
+    result = player.hp > enemy.hp ? '🏆 嫁の判定勝ち！' : '👵 姑の判定勝ち…';
+    sub = '時間切れ！旦那はまだおどおどしてます。';
+  }
+  $id('msg-title').textContent = result;
+  $id('msg-sub').textContent = sub;
+  $id('btn-start').textContent = 'もう一度！';
+  $id('msg-overlay').style.display = 'flex';
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  START / LOOP
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━
+function startGame() {
+  currentScene = Math.floor(Math.random() * SCENES.length);
+  SCENES[currentScene].render($id('bg-svg'));
+  $id('scene-label').textContent = SCENES[currentScene].label;
+
+  Object.assign(player, { x:60, y:0, vy:0, hp:100, gauge:0, defending:false, jumping:false, attackCooldown:0, stunned:0 });
+  Object.assign(enemy, { x:300, y:0, vy:0, hp:100, gauge:0, defending:false, jumping:false, attackCooldown:0, stunned:0, aiTimer:30, aiState:'approach' });
+
+  setHp('player', 100); setHp('enemy', 100);
+  setGauge('player', 0); setGauge('enemy', 0);
+  timer = 60;
+  $id('timer-bar').textContent = '60';
+  $id('timer-bar').style.color = '#ffd700';
+  $id('status-row').innerHTML = '';
+  $id('btn-beam').classList.remove('ready');
+  gameOver = false; gameActive = true;
+  $id('msg-overlay').style.display = 'none';
+
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    timer--;
+    $id('timer-bar').textContent = timer;
+    $id('timer-bar').style.color = timer <= 10 ? '#ff4444' : '#ffd700';
+    if (timer <= 0) checkWin();
+  }, 1000);
+
+  lastTime = 0;
+  requestAnimationFrame(gameLoop);
+}
+
+function gameLoop(ts) {
+  if (!gameActive) return;
+  if (ts - lastTime < 16) { requestAnimationFrame(gameLoop); return; }
+  lastTime = ts;
+  if (joystickActive && !player.stunned) {
+    const speed = (joystickDx / 60) * MOVE_SPEED * 3;
+    player.x = Math.max(10, Math.min(ARENA_W - CHAR_W - 10, player.x + speed));
+  }
+  physicsStep();
+  enemyAI();
+  renderPositions();
+  requestAnimationFrame(gameLoop);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  INIT
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━
+function init() {
+  player.el = $id('player');
+  enemy.el  = $id('enemy');
+
+  // Start button
+  $id('btn-start').addEventListener('click', startGame);
+
+  // Attack
+  $id('btn-attack').addEventListener('touchstart', e => { e.preventDefault(); if (gameActive) doAttack('player'); }, { passive: false });
+  $id('btn-attack').addEventListener('mousedown', () => { if (gameActive) doAttack('player'); });
+
+  // Defend
+  $id('btn-defend').addEventListener('touchstart', e => { e.preventDefault(); player.defending = true; }, { passive: false });
+  $id('btn-defend').addEventListener('touchend',   e => { e.preventDefault(); player.defending = false; }, { passive: false });
+  $id('btn-defend').addEventListener('mousedown', () => player.defending = true);
+  $id('btn-defend').addEventListener('mouseup',   () => player.defending = false);
+
+  // Jump
+  $id('btn-jump').addEventListener('touchstart', e => { e.preventDefault(); doJump('player'); }, { passive: false });
+  $id('btn-jump').addEventListener('mousedown', () => doJump('player'));
+
+  // Beam
+  $id('btn-beam').addEventListener('touchstart', e => { e.preventDefault(); if (gameActive) doBeam('player'); }, { passive: false });
+  $id('btn-beam').addEventListener('mousedown', () => { if (gameActive) doBeam('player'); });
+
+  // Joystick
+  const area  = $id('joystick-area');
+  const thumb = $id('joystick-thumb');
+  function jStart(cx, cy) {
+    const r = area.getBoundingClientRect();
+    joystickOriginX = cx; joystickActive = true; joystickDx = 0;
+    thumb.style.display = 'block';
+    thumb.style.left = (cx - r.left) + 'px';
+    thumb.style.top  = Math.max(18, Math.min(r.height - 18, cy - r.top)) + 'px';
+  }
+  function jMove(cx, cy) {
+    if (!joystickActive) return;
+    const r = area.getBoundingClientRect();
+    joystickDx = Math.max(-60, Math.min(60, cx - joystickOriginX));
+    thumb.style.left = Math.max(18, Math.min(r.width - 18, cx - r.left)) + 'px';
+    thumb.style.top  = Math.max(18, Math.min(r.height - 18, cy - r.top)) + 'px';
+  }
+  function jEnd() { joystickActive = false; joystickDx = 0; thumb.style.display = 'none'; }
+
+  area.addEventListener('touchstart', e => { e.preventDefault(); const t = e.touches[0]; jStart(t.clientX, t.clientY); }, { passive: false });
+  area.addEventListener('touchmove',  e => { e.preventDefault(); const t = e.touches[0]; jMove(t.clientX, t.clientY); }, { passive: false });
+  area.addEventListener('touchend',   e => { e.preventDefault(); jEnd(); }, { passive: false });
+  area.addEventListener('mousedown',  e => jStart(e.clientX, e.clientY));
+  window.addEventListener('mousemove', e => jMove(e.clientX, e.clientY));
+  window.addEventListener('mouseup',   () => { if (joystickActive) jEnd(); });
+
+  renderPositions();
+}
+
+init();
+</script>
+</body>
+</html>
